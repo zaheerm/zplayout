@@ -1,0 +1,75 @@
+<registry>
+  <components>
+    <component type="playlist-producer"
+               base="flumotion/component/producers/playlist"
+               _description="Produces a raw audio/video feed from a playlist of input files, scheduled for particular times.">
+      <source location="flumotion.component.producers.playlist.playlist"/>
+      <feeder name="audio"/>
+      <feeder name="video"/>
+      <entries>
+        <entry type="component" location="playlist.py"
+               function="PlaylistProducer" />
+        <entry type="admin/gtk" location="admin_gtk.py"
+               function="GUIClass" />
+      </entries>
+
+      <synchronization required="yes" clock-priority="110" />
+
+      <properties>
+        <property name="audio" type="bool"
+                  _description="Whether to output audio."/>
+        <property name="video" type="bool"
+                  _description="Whether to output video."/>
+
+        <property name="video-pattern" type="string"
+                  _description="The output video pattern for default video."/>
+        <property name="audio-wave" type="string"
+                  _description="The output audio wave for default audio."/>
+
+        <property name="height" type="int"
+                  _description="The scaled output height of video." />
+        <property name="width" type="int"
+                  _description="The scaled output width of video." />
+        <property name="framerate" type="fraction"
+                  _description="The frame rate to output." />
+        <property name="samplerate" type="int"
+                  _description="The sample rate to output." />
+        <property name="channels" type="int"
+                  _description="The number of audio channels to output." />
+
+        <property name="playlist" type="string"
+                  _description="The location of the initial playlist file, if any." />
+                  <!-- FIXME: Is this a local filepath, or a URI? murrayc -->
+        <property name="playlist-directory" type="string"
+                  _description="The location of a directory to monitor for playlist files to add." />
+                  <!-- FIXME: Is this a local filepath, or a URI? murrayc -->
+
+        <property name="base-directory" type="string"
+                  _description="The base directory for relative paths in playlist files." />
+                  <!-- FIXME: Is this a local filepath, or a URI? murrayc -->
+      </properties>
+    </component>
+  </components>
+  <bundles>
+
+    <bundle name="playlist-component">
+        <dependencies>
+            <dependency name="component" />
+            <dependency name="base-admin-gtk" />
+        </dependencies>
+
+        <directories>
+            <directory name="flumotion/component/producers/playlist">
+                <filename location="__init__.py" />
+                <filename location="smartscale.py" />
+                <filename location="singledecodebin.py" />
+                <filename location="playlist.py" />
+                <filename location="playlistparser.py" />
+                <filename location="admin_gtk.py" />
+                <filename location="playlist.glade" />
+            </directory>
+        </directories>
+    </bundle>
+
+  </bundles>
+</registry>
