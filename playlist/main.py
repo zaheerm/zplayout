@@ -28,13 +28,28 @@ from twisted.internet import defer
 import gobject
 gobject.threads_init()
 import gst
+import cluttergst
+import clutter
 
 import playlist
 
-props = { "video-pattern": "smpte", "audio-wave": "pink-noise", "width": 720, "height": 576, "base-directory": "/home/zaheer/playlist/files", "playlist-directory": "/home/zaheer/playlist/playlist" }
+stage = clutter.Stage()
+stage.set_size(720, 576)
+stage.connect('destroy', lambda y: reactor.stop())
+video_tex = clutter.Texture()
+video_tex.set_size(720, 576)
+size = stage.get_size()
+print "%r" % (size,)
+stage.add(video_tex)
+props = { "video-pattern": "black", "audio-wave": "ticks", "width": 720, "height": 576, "base-directory": "/home/zaheer/playlist/files", "playlist-directory": "/home/zaheer/playlist/playlist", "texture": video_tex }
 
 p = playlist.PlaylistProducer(props)
 p.create_pipeline()
 p.do_setup()
 p.pipeline.set_state(gst.STATE_PLAYING)
+overlay = clutter.Texture("overlay.png")
+overlay.set_position(680, 10)
+stage.add(overlay)
+stage.show()
+
 reactor.run()

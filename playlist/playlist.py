@@ -17,6 +17,7 @@
 import time
 
 import gst
+import cluttergst
 from twisted.internet import defer, reactor
 
 import gstreamer
@@ -113,8 +114,8 @@ class PlaylistProducer:
         audiorate = gst.element_factory_make("audiorate")
         audioconvert = gst.element_factory_make('audioconvert')
         resampler = 'audioresample'
-        if gstreamer.element_factory_exists('legacyresample'):
-            resampler = 'legacyresample'
+        #if gstreamer.element_factory_exists('legacyresample'):
+        #    resampler = 'legacyresample'
         audioresample = gst.element_factory_make(resampler)
         outcaps = gst.Caps(
             "audio/x-raw-int,channels=%d,rate=%d,width=16,depth=16" %
@@ -164,8 +165,7 @@ class PlaylistProducer:
             # For each of audio, video, we build a pipeline that looks roughly
             # like:
             #
-            # gnlcomposition ! identity sync=true !
-            # identity single-segment=true ! audio/video-elements ! sink
+            # gnlcomposition ! queue2 ! audio/video-elements ! sink
 
             composition = gst.element_factory_make("gnlcomposition",
                 mediatype + "-composition")
@@ -173,26 +173,27 @@ class PlaylistProducer:
             segmentidentity = gst.element_factory_make("identity")
             segmentidentity.set_property("single-segment", True)
             segmentidentity.set_property("silent", True)
-            syncidentity = gst.element_factory_make("identity")
-            syncidentity.set_property("silent", True)
-            syncidentity.set_property("sync", True)
-
-            pipeline.add(composition, segmentidentity, syncidentity)
+            #syncidentity = gst.element_factory_make("identity")
+            #syncidentity.set_property("silent", True)
+            #syncidentity.set_property("sync", True)
+            queue2 = gst.element_factory_make("queue2")
+            pipeline.add(composition, segmentidentity, queue2)#, segmentidentity, syncidentity)
 
             def _padAddedCb(element, pad, target):
                 self.debug("Pad added, linking")
                 pad.link(target)
             composition.connect('pad-added', _padAddedCb,
-                syncidentity.get_pad("sink"))
-            syncidentity.link(segmentidentity)
+                segmentidentity.get_pad("sink"))
+            #syncidentity.link(segmentidentity)
+            segmentidentity.link(queue2)
 
             if mediatype == 'audio':
                 self.audiocomp = composition
-                srcpad = self._buildAudioPipeline(pipeline, segmentidentity)
+                srcpad = self._buildAudioPipeline(pipeline, queue2)
                 renderer = self._buildAudioRenderer(pipeline)
             else:
                 self.videocomp = composition
-                srcpad = self._buildVideoPipeline(pipeline, segmentidentity)
+                srcpad = self._buildVideoPipeline(pipeline, queue2)
                 renderer = self._buildVideoRenderer(pipeline)
             
             srcpad.link(renderer)
@@ -200,19 +201,27 @@ class PlaylistProducer:
         return pipeline
 
     def _buildVideoRenderer(self, pipeline):
-        queue = gst.element_factory_make("queue2")
-        sink = gst.element_factory_make("xvimagesink")
-        pipeline.add(queue, sink)
-        queue.link(sink)
-        return queue.get_pad("sink")
+        #queue = gst.element_factory_make("queue2")
+        csp = gst.element_factory_make("ffmpegcolorspace")
+        #sink = gst.element_factory_make("xvimagesink")
+        texture = self.props["texture"]
+        sink = cluttergst.VideoSink(texture)
+        #pipeline.add(queue, sink)
+        #sink.props.qos = False
+        pipeline.add(csp, sink)
+        #queue.link(sink)
+        csp.link(sink)
+        return csp.get_pad("sink") #queue.get_pad("sink")
 
     def _buildAudioRenderer(self, pipeline):
-        queue = gst.element_factory_make("queue2")
+        #queue = gst.element_factory_make("queue2")
         sink = gst.element_factory_make("alsasink")
         sink.set_property("device", "plughw:0,0")
-        pipeline.add(queue, sink)
-        queue.link(sink)
-        return queue.get_pad("sink")
+        #sink.props.qos = False
+        #pipeline.add(queue, sink)
+        pipeline.add(sink)
+        #queue.link(sink)
+        return sink.get_pad("sink") #queue.get_pad("sink")
 
     def _createDefaultSources(self, properties):
         if self._hasVideo:
@@ -339,18 +348,10 @@ class PlaylistProducer:
 
     def _setupClock(self, pipeline):
         # Configure our pipeline to use a known basetime and clock.
-        clock = gst.SystemClock()
+        clock = pipeline.get_clock()
         # It doesn't matter too much what this basetime is, so long as we know
         # the value.
-        self.basetime = clock.get_time()
-
-        # We force usage of the system clock.
-        pipeline.use_clock(clock)
-        # Now we disable default basetime distribution
-        pipeline.set_new_stream_time(gst.CLOCK_TIME_NONE)
-        # And we choose our own basetime...
-        self.debug("Setting basetime of %d" % self.basetime)
-        pipeline.set_base_time(self.basetime)
+        self.basetime = pipeline.get_base_time()
 
     def _watchDirectory(self, dir):
         self.debug("Watching directory %s" % dir)
