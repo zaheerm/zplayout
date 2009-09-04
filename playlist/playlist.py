@@ -140,8 +140,9 @@ class PlaylistProducer:
                  self._framerate[1]))
 
         cspace = gst.element_factory_make("ffmpegcolorspace")
-        scaler = smartscale.SmartVideoScale()
-        scaler.set_caps(outcaps)
+        #scaler = smartscale.SmartVideoScale()
+        #scaler.set_caps(outcaps)
+        scaler = gst.element_factory_make("videoscale")
         videorate = gst.element_factory_make("videorate")
         capsfilter = gst.element_factory_make("capsfilter")
         capsfilter.props.caps = outcaps
@@ -156,7 +157,9 @@ class PlaylistProducer:
 
     def _buildPipeline(self):
         pipeline = gst.Pipeline()
-
+        bus = pipeline.get_bus()
+        bus.add_signal_watch()
+        bus.connect("message", self.on_message)
         for mediatype in ['audio', 'video']:
             if (mediatype == 'audio' and not self._hasAudio) or (
                 mediatype == 'video' and not self._hasVideo):
@@ -195,7 +198,7 @@ class PlaylistProducer:
                 self.videocomp = composition
                 srcpad = self._buildVideoPipeline(pipeline, queue2)
                 renderer = self._buildVideoRenderer(pipeline)
-            
+
             srcpad.link(renderer)
 
         return pipeline
@@ -209,8 +212,8 @@ class PlaylistProducer:
         #pipeline.add(queue, sink)
         #sink.props.qos = False
         pipeline.add(csp, sink)
-        #queue.link(sink)
         csp.link(sink)
+        #queue.link(sink)
         return csp.get_pad("sink") #queue.get_pad("sink")
 
     def _buildAudioRenderer(self, pipeline):
@@ -235,8 +238,10 @@ class PlaylistProducer:
             self.audiocomp.add(asrc)
 
     def timeReport(self):
-        ts = self.pipeline.get_clock().get_time()
-        self.debug("Pipeline clock is now at %d -> %s" % (ts, _tsToString(ts)))
+        clock = self.pipeline.get_clock()
+        ts = clock.get_time()
+        basetime = self.pipeline.get_base_time()
+        self.debug("Pipeline clock %r is now at %d -> %s base %d" % (clock, ts, _tsToString(ts), basetime))
         reactor.callLater(10, self.timeReport)
 
     def getCurrentPosition(self):
@@ -274,7 +279,7 @@ class PlaylistProducer:
         timeuntilend = end - now
         # After the end time, remove this item from the composition, otherwise
         # it will continue to use huge gobs of memory and lots of threads.
-        reactor.callLater(timeuntilend/gst.SECOND + 5,
+        reactor.callLater(timeuntilend/gst.SECOND + 60,
             self.unscheduleItem, item)
 
         if self._hasVideo and item.hasVideo:
@@ -340,18 +345,28 @@ class PlaylistProducer:
         self._hasVideo = props.get('video', True)
 
         pipeline = self._buildPipeline()
-        self._setupClock(pipeline)
+        #self._setupClock(pipeline)
 
         self._createDefaultSources(props)
         self.pipeline = pipeline
         return pipeline
 
+    def on_message(self, bus, message):
+        t = message.type
+        s = message.src
+        if t == gst.MESSAGE_STATE_CHANGED and s == self.pipeline:
+            old, new, pending = message.parse_state_changed()
+            if old == gst.STATE_PAUSED and new == gst.STATE_PLAYING:
+                self._setupClock(self.pipeline)
+
     def _setupClock(self, pipeline):
         # Configure our pipeline to use a known basetime and clock.
         clock = pipeline.get_clock()
+        print "clock: %r" % (clock,)
         # It doesn't matter too much what this basetime is, so long as we know
         # the value.
         self.basetime = pipeline.get_base_time()
+        print "basetime: %r" % self.basetime
 
     def _watchDirectory(self, dir):
         self.debug("Watching directory %s" % dir)
